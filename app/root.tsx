@@ -1,3 +1,10 @@
+import type { LinksFunction } from "@remix-run/node";
+
+import appStylesHref from "./app.css?url";
+export const links: LinksFunction = () => [
+  { rel: "stylesheet", href: appStylesHref },
+];
+
 import {
   Form,
   Links,
