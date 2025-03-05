@@ -21,7 +21,12 @@ import { createEmptyContact, getContacts } from "./data";
 
 export const loader = async () => {
   const contacts = await getContacts();
-  return json({ contacts });
+  return json({ contacts }), {
+    headers: {
+
+    "Cache-Control": "max-age=0, s-maxage=10", 
+  }
+};
 };
 
 export const action = async () => {
