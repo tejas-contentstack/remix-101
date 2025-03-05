@@ -1,9 +1,9 @@
-import type { LinksFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
+import type { LinksFunction } from '@remix-run/node';
+import { json } from '@remix-run/node';
 
-import appStylesHref from "./app.css?url";
+import appStylesHref from './app.css?url';
 export const links: LinksFunction = () => [
-  { rel: "stylesheet", href: appStylesHref },
+  { rel: 'stylesheet', href: appStylesHref },
 ];
 
 import {
@@ -15,18 +15,20 @@ import {
   Outlet,
   Link,
   useLoaderData,
-  NavLink
-} from "@remix-run/react";
-import { createEmptyContact, getContacts } from "./data";
+  NavLink,
+} from '@remix-run/react';
+import { createEmptyContact, getContacts } from './data';
 
 export const loader = async () => {
   const contacts = await getContacts();
-  return json({ contacts }), {
-    headers: {
-
-    "Cache-Control": "max-age=0, s-maxage=10", 
-  }
-};
+  return json(
+    { contacts },
+    {
+      headers: {
+        'Cache-Control': 'max-age=0, s-maxage=10',
+      },
+    }
+  );
 };
 
 export const action = async () => {
@@ -35,8 +37,8 @@ export const action = async () => {
 };
 
 export default function App() {
+  const a = useLoaderData<typeof loader>();
   const { contacts } = useLoaderData<typeof loader>();
-
 
   return (
     <html lang="en">
@@ -65,30 +67,24 @@ export default function App() {
             </Form>
           </div>
           <nav>
-          {contacts.length ? (
+            {contacts.length ? (
               <ul>
                 {contacts.map((contact) => (
                   <li key={contact.id}>
                     <NavLink
-                  className={({ isActive, isPending }) =>
-                    isActive
-                      ? "active"
-                      : isPending
-                      ? "pending"
-                      : ""
-                  }
-                  to={`contacts/${contact.id}`}
-                >
+                      className={({ isActive, isPending }) =>
+                        isActive ? 'active' : isPending ? 'pending' : ''
+                      }
+                      to={`contacts/${contact.id}`}
+                    >
                       {contact.first || contact.last ? (
                         <>
                           {contact.first} {contact.last}
                         </>
                       ) : (
                         <i>No Name</i>
-                      )}{" "}
-                      {contact.favorite ? (
-                        <span>★</span>
-                      ) : null}
+                      )}{' '}
+                      {contact.favorite ? <span>★</span> : null}
                     </NavLink>
                   </li>
                 ))}
