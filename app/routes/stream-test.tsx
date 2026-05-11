@@ -1,155 +1,142 @@
-import { defer, type LoaderFunctionArgs } from "@remix-run/node";
-import { Await, useLoaderData } from "@remix-run/react";
-import { Suspense } from "react";
+import { useEffect, useRef, useState } from "react";
 
-export type LyticTier = "fast" | "medium" | "slow";
+type Pace = "fast" | "medium" | "slow";
 
-export type LyticEvent = {
-  kind: "lytic";
-  tier: LyticTier;
-  /** How long this event was delayed server-side (simulated upstream latency). */
-  simulatedLatencyMs: number;
-  event: string;
-  properties: Record<string, string | number | boolean>;
-  receivedAt: string;
-};
+async function consumeWordLines(
+  response: Response,
+  onLine: (word: string) => void,
+  signal: AbortSignal
+): Promise<void> {
+  const reader = response.body?.getReader();
+  if (!reader) return;
 
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
+  const dec = new TextDecoder();
+  let buffer = "";
 
-function clampMs(n: number, fallback: number, min = 50, max = 30_000) {
-  if (!Number.isFinite(n) || n < min) return fallback;
-  return Math.min(max, Math.max(min, Math.round(n)));
-}
+  while (!signal.aborted) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += dec.decode(value, { stream: true });
+    const parts = buffer.split("\n");
+    buffer = parts.pop() ?? "";
+    for (const line of parts) {
+      const w = line.trim();
+      if (w) onLine(w);
+    }
+  }
 
-function parseTierMs(
-  url: URL,
-  key: LyticTier,
-  fallback: number
-): number {
-  const raw = url.searchParams.get(key);
-  if (raw === null || raw === "") return fallback;
-  return clampMs(Number(raw), fallback);
-}
-
-async function emitLytic(
-  tier: LyticTier,
-  simulatedLatencyMs: number,
-  event: string,
-  properties: Record<string, string | number | boolean>
-): Promise<LyticEvent> {
-  await sleep(simulatedLatencyMs);
-  return {
-    kind: "lytic",
-    tier,
-    simulatedLatencyMs,
-    event,
-    properties: { ...properties, tier },
-    receivedAt: new Date().toISOString(),
-  };
-}
-
-const DEFAULT_MS: Record<LyticTier, number> = {
-  fast: 200,
-  medium: 1400,
-  slow: 3200,
-};
-
-export async function loader({ request }: LoaderFunctionArgs) {
-  const url = new URL(request.url);
-  const fastMs = parseTierMs(url, "fast", DEFAULT_MS.fast);
-  const mediumMs = parseTierMs(url, "medium", DEFAULT_MS.medium);
-  const slowMs = parseTierMs(url, "slow", DEFAULT_MS.slow);
-
-  const lyticsFast = emitLytic("fast", fastMs, "page.context", {
-    path: url.pathname,
-    referrer: "simulated",
-  });
-
-  const lyticsMedium = emitLytic("medium", mediumMs, "experiment.exposure", {
-    flagKey: "stream_demo",
-    variant: "b",
-  });
-
-  const lyticsSlow = emitLytic("slow", slowMs, "recommendations.loaded", {
-    count: 12,
-    cacheHit: false,
-  });
-
-  return defer({
-    meta: {
-      title: "Lytics streaming demo",
-      hint: "Deferred lytic events resolve at fast / medium / slow simulated latencies and stream in the document response as each promise completes.",
-      tiers: { fast: fastMs, medium: mediumMs, slow: slowMs } as const,
-    },
-    lyticsFast,
-    lyticsMedium,
-    lyticsSlow,
-  });
-}
-
-function LyticPanel({
-  title,
-  promise,
-}: {
-  title: string;
-  promise: Promise<LyticEvent>;
-}) {
-  return (
-    <section style={{ marginTop: "1.25rem" }}>
-      <h2 style={{ fontSize: "1.05rem", marginBottom: "0.5rem" }}>{title}</h2>
-      <Suspense
-        fallback={
-          <p style={{ color: "#666", margin: 0 }}>Streaming lytic…</p>
-        }
-      >
-        <Await resolve={promise}>
-          {(lytic: LyticEvent) => (
-            <pre
-              style={{
-                background: "#f4f4f4",
-                padding: "0.75rem",
-                borderRadius: 8,
-                margin: 0,
-                overflow: "auto",
-              }}
-            >
-              {JSON.stringify(lytic, null, 2)}
-            </pre>
-          )}
-        </Await>
-      </Suspense>
-    </section>
-  );
+  const tail = buffer.trim();
+  if (tail && !signal.aborted) onLine(tail);
 }
 
 export default function StreamTestRoute() {
-  const { meta, lyticsFast, lyticsMedium, lyticsSlow } =
-    useLoaderData<typeof loader>();
+  const [pace, setPace] = useState<Pace>("medium");
+  const [words, setWords] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+  const seq = useRef(0);
 
-  const { fast, medium, slow } = meta.tiers;
-  const qs = `fast=${fast}&medium=${medium}&slow=${slow}`;
+  useEffect(() => {
+    const id = ++seq.current;
+    const ac = new AbortController();
+    setError(null);
+    setWords([]);
+    setRunning(true);
+
+    void (async () => {
+      try {
+        const res = await fetch(`/stream-test/stream?pace=${pace}`, {
+          signal: ac.signal,
+        });
+        if (!res.ok) {
+          if (seq.current === id) setError(`HTTP ${res.status}`);
+          return;
+        }
+        await consumeWordLines(
+          res,
+          (word) => {
+            if (seq.current !== id) return;
+            setWords((prev) => [...prev, word]);
+          },
+          ac.signal
+        );
+      } catch (e) {
+        if ((e as Error).name === "AbortError") return;
+        if (seq.current === id) {
+          setError(e instanceof Error ? e.message : "Stream failed");
+        }
+      } finally {
+        if (seq.current === id) setRunning(false);
+      }
+    })();
+
+    return () => {
+      ac.abort();
+    };
+  }, [pace]);
+
+  const prose = words.join(" ");
 
   return (
     <div id="contact" style={{ padding: "1rem" }}>
-      <h1>{meta.title}</h1>
-      <p>{meta.hint}</p>
-      <p style={{ marginBottom: "0.25rem" }}>
-        <strong>Simulated latencies (ms):</strong> fast{" "}
-        <code>{fast}</code>, medium <code>{medium}</code>, slow{" "}
-        <code>{slow}</code>
-      </p>
-      <p style={{ fontSize: "0.9rem", color: "#444" }}>
-        Override:{" "}
-        <a href={`?${qs}`}>current</a> ·{" "}
-        <a href="?fast=80&medium=600&slow=5000">stress</a> ·{" "}
-        <a href="?fast=100&medium=2500&slow=2500">medium race</a>
+      <h1>Lyrics stream (word by word)</h1>
+      <p style={{ maxWidth: "52rem" }}>
+        The server sends one word per line over a{" "}
+        <code>ReadableStream</code> from{" "}
+        <code>/stream-test/stream</code>. This page reads the response as it
+        arrives and prints each word. Pace is a simulated delay between words so
+        you can try fast, medium, and slow in DevTools → Network.
       </p>
 
-      <LyticPanel title="Fast tier" promise={lyticsFast} />
-      <LyticPanel title="Medium tier" promise={lyticsMedium} />
-      <LyticPanel title="Slow tier" promise={lyticsSlow} />
+      <p style={{ marginTop: "0.75rem" }}>
+        <strong>Pace:</strong>{" "}
+        {(["fast", "medium", "slow"] as const).map((p) => (
+          <button
+            key={p}
+            type="button"
+            disabled={pace === p}
+            onClick={() => setPace(p)}
+            style={{
+              marginRight: "0.35rem",
+              fontWeight: pace === p ? 700 : 500,
+            }}
+          >
+            {p}
+          </button>
+        ))}
+        {running ? (
+          <span style={{ color: "#666", marginLeft: "0.5rem" }}>
+            Streaming…
+          </span>
+        ) : null}
+      </p>
+
+      {error ? (
+        <p role="alert" style={{ color: "#b00020" }}>
+          {error}
+        </p>
+      ) : null}
+
+      <article
+        style={{
+          marginTop: "1.25rem",
+          padding: "1rem",
+          background: "#f8f8f8",
+          borderRadius: 8,
+          minHeight: "8rem",
+          whiteSpace: "pre-wrap",
+          fontSize: "1.05rem",
+          lineHeight: 1.55,
+        }}
+        aria-live="polite"
+        aria-busy={running}
+      >
+        {prose || (running ? "" : "(no words yet)")}
+      </article>
+
+      <p style={{ marginTop: "0.75rem", fontSize: "0.9rem", color: "#555" }}>
+        Words received: {words.length}
+      </p>
     </div>
   );
 }
