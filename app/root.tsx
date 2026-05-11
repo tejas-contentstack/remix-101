@@ -73,9 +73,9 @@ export default function App() {
                   className={({ isActive, isPending }) =>
                     isActive ? 'active' : isPending ? 'pending' : ''
                   }
-                  to="stream-test"
+                  to="popoye"
                 >
-                  Stream test
+                  Popoye
                 </NavLink>
               </li>
             </ul>

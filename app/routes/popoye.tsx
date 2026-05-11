@@ -29,7 +29,7 @@ async function consumeWordLines(
   if (tail && !signal.aborted) onLine(tail);
 }
 
-export default function StreamTestRoute() {
+export default function PopoyeRoute() {
   const [pace, setPace] = useState<Pace>("medium");
   const [words, setWords] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +45,7 @@ export default function StreamTestRoute() {
 
     void (async () => {
       try {
-        const res = await fetch(`/stream-test/stream?pace=${pace}`, {
+        const res = await fetch(`/popoye/stream?pace=${pace}`, {
           signal: ac.signal,
         });
         if (!res.ok) {
@@ -79,17 +79,29 @@ export default function StreamTestRoute() {
 
   return (
     <div id="contact" style={{ padding: "1rem" }}>
-      <h1>Lyrics stream (word by word)</h1>
+      <h1>Popoye</h1>
       <p style={{ maxWidth: "52rem" }}>
-        The server sends one word per line over a{" "}
-        <code>ReadableStream</code> from{" "}
-        <code>/stream-test/stream</code>. This page reads the response as it
-        arrives and prints each word. Pace is a simulated delay between words so
-        you can try fast, medium, and slow in DevTools → Network.
+        Play the clip with the controls below. Lyrics are streamed word-by-word
+        from <code>/popoye/stream</code> (a <code>ReadableStream</code>). Pace
+        only changes the delay between words for the demo, not the video.
       </p>
 
-      <p style={{ marginTop: "0.75rem" }}>
-        <strong>Pace:</strong>{" "}
+      <div style={{ marginTop: "1rem", maxWidth: "min(560px, 100%)" }}>
+        <video
+          controls
+          playsInline
+          preload="metadata"
+          src="/popoye.mp4"
+          style={{
+            width: "100%",
+            borderRadius: 8,
+            background: "#111",
+          }}
+        />
+      </div>
+
+      <p style={{ marginTop: "1rem" }}>
+        <strong>Word stream pace:</strong>{" "}
         {(["fast", "medium", "slow"] as const).map((p) => (
           <button
             key={p}
