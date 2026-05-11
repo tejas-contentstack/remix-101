@@ -67,6 +67,18 @@ export default function App() {
             </Form>
           </div>
           <nav>
+            <ul>
+              <li>
+                <NavLink
+                  className={({ isActive, isPending }) =>
+                    isActive ? 'active' : isPending ? 'pending' : ''
+                  }
+                  to="stream-test"
+                >
+                  Stream test
+                </NavLink>
+              </li>
+            </ul>
             {contacts.length ? (
               <ul>
                 {contacts.map((contact) => (
